@@ -2,10 +2,38 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from hypothesis import given, strategies as st
 
 from app.db import models
 from app.domain import accounts, money, quotes
 from app.domain.rates import RateProvider, RatesStale
+
+CURRENCIES = ["USD", "EUR", "KES", "NGN"]
+PAIRS = [(a, b) for a in CURRENCIES for b in CURRENCIES if a != b]
+
+
+@given(
+    amount=st.decimals(
+        min_value=Decimal("0.01"),
+        max_value=Decimal("10000000"),
+        places=2,
+        allow_nan=False,
+        allow_infinity=False,
+    ),
+    pair=st.sampled_from(PAIRS),
+)
+def test_conversion_is_decimal_exact_over_random_amounts_and_pairs(amount, pair):
+    # Over random amounts and every pair (cross pairs included), the converted
+    # amount stays Decimal, is quantized to the destination minor units, and never
+    # drifts more than half a minor unit from the exact product. No float path.
+    provider = RateProvider.seeded()
+    from_ccy, to_ccy = pair
+    rate = provider.effective_rate(from_ccy, to_ccy)
+    final = money.quantize(amount * rate, to_ccy)
+    assert isinstance(final, Decimal)
+    assert -final.as_tuple().exponent == money.minor_units(to_ccy)
+    assert final >= 0
+    assert abs(final - amount * rate) <= money.quantum(to_ccy) / 2
 
 
 def test_generate_quote_locks_rate_and_sets_expiry(db):

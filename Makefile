@@ -20,3 +20,6 @@ fmt:
 
 lint:
 	./venv/bin/ruff check app tests
+
+demo:
+	./venv/bin/python -m scripts.demo

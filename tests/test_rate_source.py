@@ -70,6 +70,16 @@ def test_fetch_mids_http_error_raises_rate_source_error():
         source.fetch_mids(TEST_URL, client=_client(PAYLOAD, status=500))
 
 
+def test_fetch_mids_timeout_raises_rate_source_error():
+    # A slow source that times out must be handled, not hang or crash.
+    def handler(request):
+        raise httpx.ReadTimeout("rate source too slow", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(rates.RateSourceError):
+        source.fetch_mids(TEST_URL, client=client)
+
+
 def test_live_provider_with_key_refreshes_from_source():
     provider = source.make_live_provider(api_key="testkey", client=_client(PAYLOAD))
     provider.refresh()
