@@ -11,7 +11,13 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(settings.database_url, future=True, pool_pre_ping=True)
+engine = create_engine(
+    settings.database_url,
+    future=True,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,  # headroom for concurrent executes
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
@@ -29,3 +35,11 @@ def get_session():
         yield session
     finally:
         session.close()
+
+
+def get_session_factory():
+    """FastAPI dependency: the session factory itself.
+
+    Used by execute, which manages its own transaction. Overridable in tests.
+    """
+    return SessionLocal

@@ -114,7 +114,11 @@ appears in the logs.
 
 ## 7. Execute semantics (the core)
 
-`execute` runs as one database transaction at REPEATABLE READ or stronger:
+`execute` runs as one database transaction. Concurrency safety comes from
+pessimistic row locking (`SELECT ... FOR UPDATE`) under Postgres' default READ
+COMMITTED: the quote-row lock serializes concurrent executes so exactly one wins,
+with no serialization-failure retries. A unique constraint on
+`transactions.quote_id` is the backstop. Steps:
 
 1. If an idempotency key is present and a completed record exists, return the
    stored response with no re-execution. If the key exists with a different
