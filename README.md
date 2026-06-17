@@ -93,6 +93,10 @@ Scoped deliberately for a time-boxed exercise. For a real banking core I would a
   leg has a counterparty and nothing is unaccounted. Right now I model only the
   customer's balances.
 - Authentication and authorization (skipped per the brief).
+- Require an idempotency key on the money-moving endpoints (as Stripe does) rather
+  than leaving it optional, so a client's retries are always safe. Today the row
+  lock already guarantees exactly-once; this would make safe client retries
+  mandatory too.
 - Alembic migrations instead of `create_all`.
 - Sentry error tracking with a context middleware tagging events with the
   correlation and quote ids.
