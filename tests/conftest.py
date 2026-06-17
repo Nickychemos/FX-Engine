@@ -33,3 +33,32 @@ def db(engine):
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def api_client(engine):
+    """A TestClient whose DB writes happen inside a transaction that is rolled
+    back at teardown. Endpoint commits become savepoints, so the API can commit
+    normally while the test leaves the database clean."""
+    from fastapi.testclient import TestClient
+
+    from app.db.base import get_session
+    from app.domain.rates import RateProvider
+    from app.main import create_app
+
+    connection = engine.connect()
+    transaction = connection.begin()
+
+    def override_session():
+        session = Session(bind=connection, join_transaction_mode="create_savepoint")
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app = create_app(provider=RateProvider.seeded())
+    app.dependency_overrides[get_session] = override_session
+    with TestClient(app) as client:
+        yield client
+    transaction.rollback()
+    connection.close()

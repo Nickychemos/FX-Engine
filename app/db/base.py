@@ -20,3 +20,12 @@ def init_db() -> None:
     from app.db import models  # noqa: F401  (register models on Base.metadata)
 
     Base.metadata.create_all(engine)
+
+
+def get_session():
+    """FastAPI dependency: a Session per request, closed at the end."""
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
