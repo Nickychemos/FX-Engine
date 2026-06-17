@@ -42,7 +42,7 @@ def api_client(engine):
     normally while the test leaves the database clean."""
     from fastapi.testclient import TestClient
 
-    from app.db.base import get_session
+    from app.db.base import get_session, get_session_factory
     from app.domain.rates import RateProvider
     from app.main import create_app
 
@@ -56,8 +56,15 @@ def api_client(engine):
         finally:
             session.close()
 
+    def override_session_factory():
+        def factory():
+            return Session(bind=connection, join_transaction_mode="create_savepoint")
+
+        return factory
+
     app = create_app(provider=RateProvider.seeded())
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_session_factory] = override_session_factory
     with TestClient(app) as client:
         yield client
     transaction.rollback()

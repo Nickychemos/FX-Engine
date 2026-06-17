@@ -86,3 +86,52 @@ def test_quote_unknown_customer_is_404(api_client):
         },
     )
     assert resp.status_code == 404
+
+
+def test_full_flow_quote_then_execute_via_api(api_client):
+    cid = _new_customer(api_client)
+    api_client.post(
+        f"/customers/{cid}/balances/credit", json={"currency": "USD", "amount": "1000.00"}
+    )
+    quote = api_client.post(
+        "/quotes",
+        json={
+            "customer_id": cid,
+            "from_currency": "USD",
+            "to_currency": "KES",
+            "amount": "100.00",
+        },
+    ).json()
+
+    resp = api_client.post(f"/quotes/{quote['quote_id']}/execute")
+    assert resp.status_code == 200
+    assert resp.json()["quote_id"] == quote["quote_id"]
+
+    balances = {
+        b["currency"]: b["amount"]
+        for b in api_client.get(f"/customers/{cid}/balances").json()["balances"]
+    }
+    assert balances["USD"] == "900.00"
+    assert balances["KES"] == quote["final_amount"]
+
+
+def test_execute_idempotent_via_api(api_client):
+    cid = _new_customer(api_client)
+    api_client.post(
+        f"/customers/{cid}/balances/credit", json={"currency": "USD", "amount": "1000.00"}
+    )
+    quote = api_client.post(
+        "/quotes",
+        json={
+            "customer_id": cid,
+            "from_currency": "USD",
+            "to_currency": "KES",
+            "amount": "100.00",
+        },
+    ).json()
+    qid = quote["quote_id"]
+
+    first = api_client.post(f"/quotes/{qid}/execute", headers={"Idempotency-Key": "abc"})
+    second = api_client.post(f"/quotes/{qid}/execute", headers={"Idempotency-Key": "abc"})
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["transaction_id"] == second.json()["transaction_id"]

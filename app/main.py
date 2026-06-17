@@ -1,14 +1,19 @@
+import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+import structlog
+from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.schemas import CreditIn, QuoteIn
 from app.config import settings
-from app.db.base import get_session, init_db
-from app.domain import accounts, money, quotes
+from app.core import metrics
+from app.core.logging import configure_logging, get_logger
+from app.db.base import engine, get_session, get_session_factory, init_db
+from app.domain import accounts, execute, money, quotes
 from app.domain.rates import (
     NoRateAvailable,
     RateError,
@@ -17,6 +22,9 @@ from app.domain.rates import (
     RateSourceError,
 )
 from app.rates import source
+
+configure_logging()
+log = get_logger()
 
 
 def _build_provider() -> RateProvider:
@@ -29,7 +37,7 @@ def _build_provider() -> RateProvider:
 
 def _problem(code: str, status: int):
     async def handler(request: Request, exc: Exception):
-        cid = request.headers.get("X-Request-Id", "-")
+        cid = getattr(request.state, "correlation_id", "-")
         return JSONResponse(
             status_code=status,
             content={"error": code, "detail": str(exc), "correlation_id": cid},
@@ -53,6 +61,16 @@ def create_app(provider: RateProvider | None = None) -> FastAPI:
     app = FastAPI(title="FX Engine", lifespan=lifespan)
     app.state.rate_provider = provider
 
+    @app.middleware("http")
+    async def correlation(request: Request, call_next):
+        cid = request.headers.get("X-Request-Id") or str(uuid.uuid4())
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(correlation_id=cid)
+        request.state.correlation_id = cid
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = cid
+        return response
+
     # Domain errors mapped to the codes in SPEC section 8.
     app.add_exception_handler(money.CurrencyError, _problem("invalid_pair", 400))
     app.add_exception_handler(quotes.SameCurrency, _problem("invalid_pair", 400))
@@ -60,10 +78,43 @@ def create_app(provider: RateProvider | None = None) -> FastAPI:
     app.add_exception_handler(money.AmountError, _problem("validation_error", 422))
     app.add_exception_handler(RatesStale, _problem("rates_stale", 503))
     app.add_exception_handler(accounts.CustomerNotFound, _problem("not_found", 404))
+    app.add_exception_handler(execute.QuoteNotFound, _problem("quote_not_found", 404))
+    app.add_exception_handler(execute.AlreadyExecuted, _problem("already_executed", 409))
+    app.add_exception_handler(execute.Expired, _problem("expired", 409))
+    app.add_exception_handler(execute.InsufficientFunds, _problem("insufficient_funds", 422))
+    app.add_exception_handler(
+        execute.IdempotencyConflict, _problem("idempotency_conflict", 409)
+    )
 
     @app.get("/healthz")
     def healthz():
-        return {"status": "ok"}
+        db_ok = True
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception:
+            db_ok = False
+        age = provider.age_seconds()
+        stale = provider.is_stale(settings.rate_max_staleness_seconds)
+        metrics.RATE_STALENESS.set(age)
+        healthy = db_ok and not stale
+        return JSONResponse(
+            status_code=200 if healthy else 503,
+            content={
+                "status": "ok" if healthy else "degraded",
+                "db": db_ok,
+                "rates": {
+                    "last_updated": provider.last_updated.isoformat(),
+                    "age_seconds": round(age, 1),
+                    "stale": stale,
+                },
+            },
+        )
+
+    @app.get("/metrics")
+    def metrics_endpoint():
+        data, content_type = metrics.render()
+        return Response(content=data, media_type=content_type)
 
     @app.get("/rates")
     def get_rates():
@@ -73,7 +124,9 @@ def create_app(provider: RateProvider | None = None) -> FastAPI:
     def refresh_rates():
         try:
             provider.refresh()
+            metrics.RATE_REFRESHES.labels(outcome="success").inc()
         except RateSourceError as exc:
+            metrics.RATE_REFRESHES.labels(outcome="failure").inc()
             return JSONResponse(
                 status_code=502,
                 content={"error": "rate_source_error", "detail": str(exc)},
@@ -127,6 +180,14 @@ def create_app(provider: RateProvider | None = None) -> FastAPI:
             max_staleness_seconds=settings.rate_max_staleness_seconds,
         )
         session.commit()
+        metrics.QUOTES_CREATED.inc()
+        log.info(
+            "quote.created",
+            quote_id=str(quote.id),
+            from_currency=quote.from_currency,
+            to_currency=quote.to_currency,
+            amount=str(quote.amount),
+        )
         return {
             "quote_id": str(quote.id),
             "customer_id": str(quote.customer_id),
@@ -137,6 +198,33 @@ def create_app(provider: RateProvider | None = None) -> FastAPI:
             "final_amount": str(quote.final_amount),
             "expires_at": quote.expires_at.isoformat(),
         }
+
+    @app.post("/quotes/{quote_id}/execute")
+    def execute_quote(
+        quote_id: uuid.UUID,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        factory=Depends(get_session_factory),
+    ):
+        start = time.perf_counter()
+        try:
+            result = execute.execute_quote(
+                quote_id, idempotency_key=idempotency_key, session_factory=factory
+            )
+            metrics.EXECUTES.labels(outcome="success").inc()
+            log.info(
+                "execute.completed",
+                quote_id=str(quote_id),
+                transaction_id=result["transaction_id"],
+            )
+            return result
+        except execute.ExecuteError as exc:
+            metrics.EXECUTES.labels(outcome=type(exc).__name__).inc()
+            log.warning(
+                "execute.rejected", quote_id=str(quote_id), reason=type(exc).__name__
+            )
+            raise
+        finally:
+            metrics.EXECUTE_LATENCY.observe(time.perf_counter() - start)
 
     return app
 
