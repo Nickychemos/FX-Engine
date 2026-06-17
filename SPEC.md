@@ -51,6 +51,9 @@ separation, KYC, settlement and clearing, general-ledger accounting, any UI.
   price and execute price round identically.
 - Input amounts must be positive and within the source currency's minor units,
   otherwise rejected.
+- API representation: monetary amounts are sent and returned as JSON strings (for
+  example "100.00"), so a JSON number never forces them through float at the wire;
+  they are parsed straight into Decimal.
 
 ## 4. Rates, spreads and routing
 
