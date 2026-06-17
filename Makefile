@@ -1,4 +1,4 @@
-.PHONY: up down logs test run fmt lint
+.PHONY: up down db logs test run fmt lint demo
 
 up:
 	docker compose up --build -d
@@ -6,10 +6,16 @@ up:
 down:
 	docker compose down -v
 
+db:
+	docker compose up -d db
+	@echo "waiting for postgres to be ready..."
+	@until docker compose exec -T db pg_isready -U fx >/dev/null 2>&1; do sleep 1; done
+	@echo "postgres is ready"
+
 logs:
 	docker compose logs -f api
 
-test:
+test: db
 	./venv/bin/pytest -q
 
 run:
@@ -21,5 +27,5 @@ fmt:
 lint:
 	./venv/bin/ruff check app tests
 
-demo:
+demo: db
 	./venv/bin/python -m scripts.demo
