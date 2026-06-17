@@ -54,8 +54,9 @@ separation, KYC, settlement and clearing, general-ledger accounting, any UI.
 
 ## 4. Rates, spreads and routing
 
-- Source: a public rate API (exchangeratesapi.io free tier) behind a provider
-  interface. A seeded offline snapshot backs tests and local runs.
+- Source: ExchangeRate-API v6 (keyed, free tier) behind a provider interface.
+  The key comes from the environment and is never committed. A seeded offline
+  snapshot backs tests and local runs when no key is configured.
 - Spread: rates are stored as mid rates; buy = mid x (1 - s), sell = mid x
   (1 + s), with s configurable (default 50 bps per side). The bank sells the
   destination currency to the customer.
