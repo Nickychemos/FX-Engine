@@ -112,7 +112,8 @@ Scoped deliberately for a time-boxed exercise. For a real banking core I would a
   2-hour drafting session on the night of 16 June, then 09:00 to 14:00 and 16:00 to
   17:30 on 17 June.
 - Active engagement: about 7 hours of focused work (the above minus a regular
-  10-minute break in every 40 minutes).
+  10-minute break in every 40 minutes), including hands-on testing of the endpoints
+  and edge cases through the Swagger UI.
 
 ## Notes on process
 
@@ -120,3 +121,7 @@ This was built AI-native with Claude Code. I wrote `SPEC.md` before prompting, d
 the build in small reviewed slices, and kept `DECISIONS.md` honest about what I
 owned, what I delegated, and where I caught the AI being wrong. Every claim in
 `REVIEW.md` and here is backed by something runnable.
+
+Beyond the automated suite, I also exercised the endpoints and edge cases by hand
+through the Swagger UI at `/docs`, stale rates (503), quote expiry, double-execute,
+same-currency, and insufficient funds, to confirm the API behaves as specified.
