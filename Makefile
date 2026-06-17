@@ -1,5 +1,7 @@
 .PHONY: up down db logs test run fmt lint demo
 
+PORT ?= 8000
+
 up:
 	docker compose up --build -d
 
@@ -19,7 +21,7 @@ test: db
 	./venv/bin/pytest -q
 
 run:
-	./venv/bin/uvicorn app.main:app --reload
+	./venv/bin/uvicorn app.main:app --reload --port $(PORT)
 
 fmt:
 	./venv/bin/ruff format app tests
