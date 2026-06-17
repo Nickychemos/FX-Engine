@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.db.base import init_db
 from app.domain.rates import RateError, RateProvider, RateSourceError
 from app.rates import source
 
@@ -21,6 +22,7 @@ def create_app(provider: RateProvider | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        init_db()
         # Warm the rates once at startup. If the source is unreachable we keep the
         # seed; quotes fail closed later if the snapshot stays stale.
         try:
