@@ -20,7 +20,7 @@ logs:
 test: db
 	./venv/bin/pytest -q
 
-run:
+run: db
 	./venv/bin/uvicorn app.main:app --reload --port $(PORT)
 
 fmt:
