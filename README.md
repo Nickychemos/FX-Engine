@@ -93,17 +93,25 @@ Scoped deliberately for a time-boxed exercise. For a real banking core I would a
 
 - Double-entry accounting: a bank-side ledger and a spread-revenue account, so every
   leg has a counterparty and nothing is unaccounted. Right now I model only the
-  customer's balances.
+  customer's balances. On top of it, a continuous reconciliation check that proves
+  debits and credits always balance (the way Stripe's Ledger does).
 - Authentication and authorization (skipped per the brief).
 - Require an idempotency key on the money-moving endpoints (as Stripe does) rather
   than leaving it optional, so a client's retries are always safe. Today the row
   lock already guarantees exactly-once; this would make safe client retries
   mandatory too.
+- Harden idempotency further: cache and replay the response for
+  failed requests too, expire keys after a TTL, and fingerprint the full request
+  rather than just the quote id.
 - Alembic migrations instead of `create_all`.
 - Sentry error tracking with a context middleware tagging events with the
   correlation and quote ids.
 - A real rate desk: per-pair, liquidity-aware spreads rather than a single
   symmetric spread.
+- A richer quote model: multiple lock durations
+  priced by risk (a longer rate lock costs more), a rate-movement threshold that
+  voids a quote if the market gaps beyond a limit even within the window, and
+  returning the mid rate, the all-in rate, and the explicit fee for transparency.
 - A scheduled rate refresher (a background job pulling rates every minute) so the
   snapshot never goes stale in normal operation. Today rates refresh at startup and
   on demand via `/rates/refresh`, and the engine fails closed if they age past the
