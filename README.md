@@ -15,6 +15,8 @@ Requirements: Docker (for Postgres), Python 3.12+ (built and tested on 3.14), an
 make.
 
 ```
+git clone https://github.com/Nickychemos/FX-Engine.git
+cd FX-Engine
 python -m venv venv
 ./venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env      # set RATES_API_KEY for live rates (optional)
